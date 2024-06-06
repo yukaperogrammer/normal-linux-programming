@@ -1,0 +1,82 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <string.h>
+
+#define BUFSIZE 1024
+
+static int open_connection(char *, char *);
+
+int main(int argc, char *argv[])
+{
+	int sock;
+	FILE *f;
+	char send[BUFSIZE];
+	char receive[BUFSIZE];
+
+	sock = open_connection((argc > 1 ? argv[1] : "localhost"), "echo");
+	f = fdopen(sock, "r+");
+	if (!f) {
+		perror("fdopen(3)");
+		exit(1);
+	}
+
+	for (;;) {
+		printf("send message (exit to quit) >> ");
+		fgets(send, sizeof(send), stdin);
+		if (strcmp(send, "exit\n") == 0) {
+			break;
+		}
+
+		/* send message */
+		fputs(send, f);
+
+		/* receive message */
+		fgets(receive, sizeof(receive), f);
+		printf("receive message >> ");
+		fputs(receive, stdout);
+		printf("\n");
+	}
+
+	fclose(f);
+
+	return 0;
+}
+
+static int open_connection(char *host, char *service)
+{
+	int sock;
+	struct addrinfo hints, *res, *ai;
+	int err;
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	if ((err = getaddrinfo(host, service, &hints, &res))) {
+		fprintf(stderr, "getaddrinfo(3): %s\n", gai_strerror(err));
+		exit(1);
+	}
+
+	for (ai = res; ai; ai = ai->ai_next) {
+		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (sock < 0) {
+			continue;
+		}
+
+		if (connect(sock, ai->ai_addr, ai->ai_addrlen) < 0) {
+			close(sock);
+			continue;
+		}
+
+		/* success */
+		freeaddrinfo(res);
+		return sock;
+	}
+
+	fprintf(stderr, "socket(2)/connect(2) failed");
+	exit(1);
+}
+
